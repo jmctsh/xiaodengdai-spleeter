@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>音频分离与分析工具</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/dropzone@5.9.3/dist/min/dropzone.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="text-center my-5">
+            <h1 class="display-4">音频分离与分析工具</h1>
+            <p class="lead">上传音频文件或输入视频URL，使用Spleeter进行音轨分离和音频分析</p>
+        </header>
+
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <ul class="nav nav-tabs card-header-tabs" id="myTab" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="upload-tab" data-bs-toggle="tab" data-bs-target="#upload" type="button" role="tab" aria-controls="upload" aria-selected="true">上传音频文件</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="url-tab" data-bs-toggle="tab" data-bs-target="#url" type="button" role="tab" aria-controls="url" aria-selected="false">输入视频URL</button>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="card-body">
+                        <div class="tab-content" id="myTabContent">
+                            <!-- 文件上传区域 -->
+                            <div class="tab-pane fade show active" id="upload" role="tabpanel" aria-labelledby="upload-tab">
+                                <form action="{{ url_for('upload') }}" class="dropzone" id="dropzoneForm">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <div class="dz-message">
+                                        拖放音频文件到这里或点击上传<br>
+                                        <small class="text-muted">支持的格式: MP3, WAV, OGG, M4A, FLAC</small>
+                                    </div>
+                                </form>
+                            </div>
+                            
+                            <!-- URL输入区域 -->
+                            <div class="tab-pane fade" id="url" role="tabpanel" aria-labelledby="url-tab">
+                                <form id="urlForm">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <div class="mb-3">
+                                        <label for="videoUrl" class="form-label">视频URL</label>
+                                        <input type="url" class="form-control" id="videoUrl" placeholder="输入YouTube或其他视频网站URL" required>
+                                        <div class="form-text">支持YouTube、Bilibili等主流视频网站</div>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary">下载并处理</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 分离选项 -->
+                <div class="card mb-4" id="separationOptions" style="display: none;">
+                    <div class="card-header">音轨分离选项</div>
+                    <div class="card-body">
+                        <form id="separationForm">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" id="fileId" name="file_id">
+                            <div class="mb-3">
+                                <label class="form-label">选择分离模式</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="stems" id="stems2" value="2stems" checked>
+                                    <label class="form-check-label" for="stems2">
+                                        2轨分离 - 人声 + 伴奏
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="stems" id="stems4" value="4stems">
+                                    <label class="form-check-label" for="stems4">
+                                        4轨分离 - 人声 + 贝斯 + 鼓 + 其他
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="stems" id="stems5" value="5stems">
+                                    <label class="form-check-label" for="stems5">
+                                        5轨分离 - 人声 + 贝斯 + 鼓 + 钢琴 + 其他
+                                    </label>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn btn-success">开始处理</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- 状态提示 -->
+                <div class="alert alert-info" id="statusAlert" style="display: none;">
+                    <div class="d-flex align-items-center">
+                        <div class="spinner-border spinner-border-sm me-2" role="status">
+                            <span class="visually-hidden">处理中...</span>
+                        </div>
+                        <div id="statusMessage">正在处理，请稍候...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dropzone@5.9.3/dist/min/dropzone.min.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

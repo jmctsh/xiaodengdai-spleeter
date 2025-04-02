@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音频播放与分析 - {{ original_name }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/player.css') }}" rel="stylesheet">
+    <style>
+        /* 音量控制样式优化 */
+        .volume-control-container {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            margin-top: 5px;
+        }
+
+        .volume-slider {
+            flex-grow: 1;
+            margin: 0 5px;
+        }
+
+        .volume-value {
+            width: 30px;
+            text-align: right;
+            font-size: 0.8rem;
+            color: #666;
+        }
+
+        .volume-labels {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            font-size: 10px;
+            color: #999;
+            margin-top: 2px;
+        }
+
+        /* 进度指示器样式 - 可拖动 */
+        .progress {
+            position: relative;
+            cursor: pointer;
+        }
+
+        .progress-indicator {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            background-color: #0d6efd;
+            border-radius: 50%;
+            top: -4px;
+            transform: translateX(-50%);
+            box-shadow: 0 0 4px rgba(0, 0, 0, 0.3);
+            z-index: 10;
+            cursor: grab;
+        }
+
+        .progress-indicator:active {
+            cursor: grabbing;
+        }
+
+        /* 和弦显示优化 */
+        .chord-display {
+            display: flex;
+            flex-wrap: wrap;
+            padding: 10px;
+            gap: 10px;
+            justify-content: flex-start;
+            align-items: flex-start;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .chord-item {
+            flex: 0 0 auto;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 8px 12px;
+            min-width: 70px;
+            text-align: center;
+            transition: all 0.2s;
+            margin-bottom: 5px;
+        }
+
+        .chord-item.active {
+            background-color: #0d6efd;
+            border-color: #0a58ca;
+            color: white;
+            transform: scale(1.05);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+
+        .chord-name {
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        .chord-timing {
+            font-size: 0.8rem;
+            color: #6c757d;
+        }
+
+        .no-chords-message {
+            text-align: center;
+            color: #6c757d;
+            padding: 20px;
+        }
+
+        /* 歌词样式优化 */
+        .lyrics-container {
+            max-height: 300px;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .lyrics-line {
+            padding: 5px 0;
+            transition: all 0.3s;
+            opacity: 0.7;
+        }
+
+        .lyrics-line.active {
+            font-weight: bold;
+            font-size: 1.1em;
+            opacity: 1;
+            color: #0d6efd;
+        }
+
+        .lyrics-info {
+            text-align: center;
+            margin-top: 15px;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <header class="text-center my-3">
+            <h1>{{ original_name }}</h1>
+            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-sm"><i class="fa fa-arrow-left"></i> 返回首页</a>
+        </header>
+
+        <div class="row">
+            <!-- 音频播放器区域 -->
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-header">音轨播放器</div>
+                    <div class="card-body">
+                        <div class="audio-player mb-4">
+                            <div class="player-controls">
+                                <button id="playAll" class="btn btn-primary mb-3 w-100"><i class="fa fa-play"></i> 播放全部</button>
+                                <div class="d-flex justify-content-between mb-2">
+                                    <button id="stopAll" class="btn btn-outline-danger"><i class="fa fa-stop"></i></button>
+                                    <div class="time-display">
+                                        <span id="currentTime">0:00</span> / <span id="duration">0:00</span>
+                                    </div>
+                                </div>
+                                <div class="progress mb-3" id="progressContainer">
+                                    <div id="progressBar" class="progress-bar" role="progressbar" style="width: 0%"></div>
+                                    <div id="progressIndicator" class="progress-indicator" style="left: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="stems-container">
+                            {% for stem_name, stem_path in stems.items() %}
+                            <div class="stem-track mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <div>
+                                        <button class="btn btn-sm btn-outline-primary toggle-solo" data-stem="{{ stem_name }}">
+                                            <i class="fa fa-headphones"></i> Solo
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-secondary toggle-mute" data-stem="{{ stem_name }}">
+                                            <i class="fa fa-volume-off"></i> Mute
+                                        </button>
+                                    </div>
+                                    <a href="{{ url_for('download_audio', file_id=file_id, stem=stem_name) }}" class="btn btn-sm btn-outline-success">
+                                        <i class="fa fa-download"></i>
+                                    </a>
+                                </div>
+                                <div class="stem-label">
+                                    <span>{{ stem_name|capitalize }}</span>
+                                </div>
+                                <div class="volume-control-container">
+                                    <i class="fa fa-volume-down"></i>
+                                    <input type="range" class="form-range volume-slider" min="0" max="2" step="0.1" value="1" data-stem="{{ stem_name }}">
+                                    <span class="volume-value">1.0</span>
+                                </div>
+                                <div class="volume-labels">
+                                    <span>0</span>
+                                    <span>1.0</span>
+                                    <span>2.0</span>
+                                </div>
+                                <audio id="audio-{{ stem_name }}" src="{{ url_for('get_audio', file_id=file_id, stem=stem_name) }}" preload="metadata"></audio>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 和弦显示区域 -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">和弦进行</div>
+                    <div class="card-body">
+                        <div class="chord-display" id="chordDisplay">
+                            <!-- 和弦将通过JavaScript动态生成 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 歌词和参数区域 -->
+            <div class="col-md-3">
+                <div class="card mb-4">
+                    <div class="card-header">歌词</div>
+                    <div class="card-body">
+                        <div class="lyrics-container" id="lyricsContainer">
+                            <!-- 歌词将通过JavaScript动态加载 -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">歌曲参数</div>
+                    <div class="card-body">
+                        <ul class="list-group list-group-flush">
+                            <li class="list-group-item d-flex justify-content-between">
+                                <span>BPM</span>
+                                <strong>{{ analysis.bpm }}</strong>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between">
+                                <span>调式</span>
+                                <strong>{{ analysis.key }}</strong>
+                            </li>
+                            <li class="list-group-item d-flex justify-content-between">
+                                <span>拍号</span>
+                                <strong>{{ analysis.time_signature }}</strong>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // 获取DOM元素
+            const playAllBtn = document.getElementById('playAll');
+            const stopAllBtn = document.getElementById('stopAll');
+            const progressBar = document.getElementById('progressBar');
+            const progressIndicator = document.getElementById('progressIndicator');
+            const progressContainer = document.getElementById('progressContainer');
+            const currentTimeDisplay = document.getElementById('currentTime');
+            const durationDisplay = document.getElementById('duration');
+            const chordDisplay = document.getElementById('chordDisplay');
+            const lyricsContainer = document.getElementById('lyricsContainer');
+
+            // 音频元素和状态
+            const audioElements = {};
+            let isPlaying = false;
+            let currentTime = 0;
+            let duration = 0;
+            let progressInterval;
+            let chordItems = [];
+            let isDragging = false;
+
+            // 初始化音频元素
+            document.querySelectorAll('audio').forEach(audio => {
+                const stem = audio.id.replace('audio-', '');
+                audioElements[stem] = {
+                    element: audio,
+                    volume: 1,
+                    muted: false,
+                    soloed: false
+                };
+
+                // 设置音频加载事件
+                audio.addEventListener('loadedmetadata', function() {
+                    if (duration === 0) {
+                        duration = audio.duration;
+                        durationDisplay.textContent = formatTime(duration);
+                        // 初始化和弦和歌词
+                        generateChords();
+                        generateRealLyrics();
+                        console.log("音频加载完成，已生成和弦和歌词");
+                    }
+                });
+            });
+
+            // 初始化音量滑块
+            document.querySelectorAll('.volume-slider').forEach(slider => {
+                const stem = slider.dataset.stem;
+                const valueDisplay = slider.nextElementSibling;
+
+                slider.addEventListener('input', function() {
+                    const volume = parseFloat(this.value);
+                    valueDisplay.textContent = volume.toFixed(1);
+                    setVolume(stem, volume);
+                });
+            });
+
+            // 设置音量
+            function setVolume(stem, volume) {
+                if (audioElements[stem]) {
+                    audioElements[stem].volume = volume;
+                    updateAudioState(stem);
+                }
+            }
+
+            // 播放全部
+            playAllBtn.addEventListener('click', function() {
+                if (isPlaying) {
+                    pauseAll();
+                } else {
+                    playAll();
+                }
+            });
+
+            // 停止全部
+            stopAllBtn.addEventListener('click', stopAll);
+
+            // 进度条点击
+            progressContainer.addEventListener('click', function(e) {
+                if (isDragging) return;
+                const rect = this.getBoundingClientRect();
+                const clickPosition = (e.clientX - rect.left) / rect.width;
+                const seekTime = clickPosition * duration;
+                seekAll(seekTime);
+            });
+
+            // 进度条拖动功能
+            progressIndicator.addEventListener('mousedown', function(e) {
+                isDragging = true;
+                document.body.style.cursor = 'grabbing';
+                e.preventDefault(); // 防止选中文本
+            });
+
+            document.addEventListener('mousemove', function(e) {
+                if (!isDragging) return;
+
+                const rect = progressContainer.getBoundingClientRect();
+                let position = (e.clientX - rect.left) / rect.width;
+
+                // 限制在有效范围内
+                position = Math.max(0, Math.min(1, position));
+
+                const seekTime = position * duration;
+
+                // 更新UI，但不立即跳转（避免频繁跳转）
+                const percent = position * 100;
+                progressBar.style.width = `${percent}%`;
+                progressIndicator.style.left = `${percent}%`;
+                currentTimeDisplay.textContent = formatTime(seekTime);
+            });
+
+            document.addEventListener('mouseup', function() {
+                if (isDragging) {
+                    isDragging = false;
+                    document.body.style.cursor = '';
+
+                    // 获取当前进度条位置
+                    const position = parseFloat(progressIndicator.style.left) / 100;
+                    const seekTime = position * duration;
+
+                    // 实际跳转
+                    seekAll(seekTime);
+                }
+            });
+
+            // Solo按钮
+            document.querySelectorAll('.toggle-solo').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const stem = this.dataset.stem;
+                    this.classList.toggle('active');
+                    toggleSolo(stem);
+                });
+            });
+
+            // Mute按钮
+            document.querySelectorAll('.toggle-mute').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const stem = this.dataset.stem;
+                    this.classList.toggle('active');
+                    toggleMute(stem);
+                });
+            });
+
+            // 播放所有音轨
+            function playAll() {
+                const startTime = currentTime;
+
+                for (const stem in audioElements) {
+                    const audio = audioElements[stem].element;
+                    audio.currentTime = startTime;
+                    updateAudioState(stem);
+
+                    const playPromise = audio.play();
+                    if (playPromise !== undefined) {
+                        playPromise.catch(error => {
+                            console.error('播放失败:', error);
+                        });
+                    }
+                }
+
+                isPlaying = true;
+                playAllBtn.innerHTML = '<i class="fa fa-pause"></i> 暂停';
+                startProgressUpdate();
+            }
+
+            // 暂停所有音轨
+            function pauseAll() {
+                for (const stem in audioElements) {
+                    audioElements[stem].element.pause();
+                }
+
+                isPlaying = false;
+                playAllBtn.innerHTML = '<i class="fa fa-play"></i> 播放全部';
+                clearInterval(progressInterval);
+            }
+
+            // 停止所有音轨
+            function stopAll() {
+                for (const stem in audioElements) {
+                    const audio = audioElements[stem].element;
+                    audio.pause();
+                    audio.currentTime = 0;
+                }
+
+                isPlaying = false;
+                currentTime = 0;
+                playAllBtn.innerHTML = '<i class="fa fa-play"></i> 播放全部';
+                progressBar.style.width = '0%';
+                progressIndicator.style.left = '0%';
+                currentTimeDisplay.textContent = '0:00';
+
+                clearInterval(progressInterval);
+                updateChordHighlight(0);
+                updateLyrics(0);
+            }
+
+            // 跳转所有音轨 - 修复跳转功能
+            function seekAll(time) {
+                // 保存当前时间
+                currentTime = time;
+
+                // 更新所有音频元素的当前时间
+                for (const stem in audioElements) {
+                    audioElements[stem].element.currentTime = time;
+                }
+
+                // 更新进度条UI
+                const percent = (time / duration) * 100;
+                progressBar.style.width = `${percent}%`;
+                progressIndicator.style.left = `${percent}%`;
+                currentTimeDisplay.textContent = formatTime(time);
+
+                // 如果当前正在播放，确保跳转后继续播放
+                if (isPlaying) {
+                    for (const stem in audioElements) {
+                        const audio = audioElements[stem].element;
+                        // 只有当音频暂停时才尝试播放
+                        if (audio.paused) {
+                            const playPromise = audio.play();
+                            if (playPromise !== undefined) {
+                                playPromise.catch(error => {
+                                    console.error('播放失败:', error);
+                                });
+                            }
+                        }
+                    }
+                }
+
+                // 更新和弦和歌词高亮
+                updateChordHighlight(time);
+                updateLyrics(time);
+            }
+
+            // 切换Solo状态
+            function toggleSolo(stem) {
+                audioElements[stem].soloed = !audioElements[stem].soloed;
+
+                const anySoloed = Object.values(audioElements).some(track => track.soloed);
+
+                for (const s in audioElements) {
+                    updateAudioState(s, anySoloed);
+                }
+            }
+
+            // 切换Mute状态
+            function toggleMute(stem) {
+                audioElements[stem].muted = !audioElements[stem].muted;
+                updateAudioState(stem);
+            }
+
+            // 更新音频状态
+            function updateAudioState(stem, anySoloed) {
+                const track = audioElements[stem];
+                const audio = track.element;
+
+                if (anySoloed === undefined) {
+                    anySoloed = Object.values(audioElements).some(t => t.soloed);
+                }
+
+                if (track.muted || (anySoloed && !track.soloed)) {
+                    audio.volume = 0;
+                } else {
+                    audio.volume = track.volume;
+                }
+            }
+
+            // 开始进度更新
+            function startProgressUpdate() {
+                clearInterval(progressInterval);
+
+                progressInterval = setInterval(() => {
+                    if (isDragging) return;
+
+                    const firstAudio = Object.values(audioElements)[0].element;
+                    currentTime = firstAudio.currentTime;
+
+                    const percent = (currentTime / duration) * 100;
+                    progressBar.style.width = `${percent}%`;
+                    progressIndicator.style.left = `${percent}%`;
+                    currentTimeDisplay.textContent = formatTime(currentTime);
+
+                    updateChordHighlight(currentTime);
+                    updateLyrics(currentTime);
+                }, 100);
+            }
+
+            // 生成和弦数据 - 改进版
+            function generateChords() {
+                // 清除现有和弦
+                chordDisplay.innerHTML = '';
+
+                // 获取歌曲主调
+                const mainKey = "{{ analysis.key }}";
+                console.log("歌曲主调:", mainKey);
+
+                if (!mainKey || mainKey === "None" || mainKey === "") {
+                    // 如果没有主调信息，使用默认的C大调
+                    console.log("没有检测到主调，使用默认C大调");
+                    const defaultKey = "C";
+
+                    // 添加提示信息
+                    const infoElement = document.createElement('div');
+                    infoElement.className = 'no-chords-message';
+                    infoElement.innerHTML = '<p>未检测到歌曲主调，显示默认和弦进行</p>';
+                    chordDisplay.appendChild(infoElement);
+
+                    // 生成默认和弦
+                    const chords = generateChordsFromKey(defaultKey);
+                    displayChords(chords);
+                } else {
+                    // 使用检测到的主调生成和弦
+                    const chords = generateChordsFromKey(mainKey);
+                    displayChords(chords);
+                }
+
+                // 更新和弦元素引用
+                chordItems = document.querySelectorAll('.chord-item');
+            }
+
+            // 显示和弦的函数
+            function displayChords(chords) {
+                // 添加和弦到显示区域 - 整齐排列
+                chords.forEach((chord, index) => {
+                    const chordElement = document.createElement('div');
+                    chordElement.className = 'chord-item';
+                    chordElement.dataset.time = chord.time;
+                    chordElement.dataset.index = index;
+
+                    const nameElement = document.createElement('div');
+                    nameElement.className = 'chord-name';
+                    nameElement.textContent = chord.name;
+
+                    const timingElement = document.createElement('div');
+                    timingElement.className = 'chord-timing';
+                    timingElement.textContent = formatTime(chord.time);
+
+                    chordElement.appendChild(nameElement);
+                    chordElement.appendChild(timingElement);
+                    chordDisplay.appendChild(chordElement);
+
+                    // 添加点击事件 - 点击和弦跳转到对应时间
+                    chordElement.addEventListener('click', function() {
+                        const chordTime = parseFloat(this.dataset.time);
+                        seekAll(chordTime);
+                    });
+                });
+            }
+
+            // 根据调式生成常见和弦进行 - 改进版，根据歌曲长度动态生成
+            function generateChordsFromKey(key) {
+                const chords = [];
+                let baseKey = key;
+                let isMinor = false;
+
+                // 检查是否是小调
+                if (key.includes('minor')) {
+                    isMinor = true;
+                    baseKey = key.replace(' minor', '');
+                }
+
+                // 定义常见和弦进行
+                const majorProgression = ['I', 'IV', 'V', 'vi', 'ii', 'iii', 'V7'];
+                const minorProgression = ['i', 'iv', 'v', 'VI', 'III', 'VII', 'V7'];
+
+                const progression = isMinor ? minorProgression : majorProgression;
+
+                // 定义音符
+                const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+                const baseIndex = notes.indexOf(baseKey);
+
+                // 如果找不到基础音符，使用C
+                const actualBaseIndex = baseIndex >= 0 ? baseIndex : 0;
+
+                // 获取歌曲BPM
+                let bpm = {{ analysis.bpm }};
+                if (!bpm || bpm < 60) bpm = 120; // 默认BPM
+
+                // 计算每小节时长（秒）
+                const barDuration = 60 / bpm * 4; // 假设4/4拍
+
+                // 添加主调作为第一个和弦
+                chords.push({
+                    name: key,
+                    time: 0,
+                    duration: barDuration
+                });
+
+                // 根据歌曲总时长计算需要生成的和弦数量
+                // 每个和弦持续一个小节
+                const totalBars = Math.ceil(duration / barDuration);
+                
+                // 确保至少生成足够的和弦覆盖整首歌
+                const chordsNeeded = Math.max(totalBars - 1, 20); // 减去已添加的主调和弦，至少20个
+
+                console.log(`歌曲长度: ${duration}秒, BPM: ${bpm}, 每小节: ${barDuration}秒, 需要生成: ${chordsNeeded}个和弦`);
+
+                // 生成和弦进行
+                let timeOffset = barDuration; // 从第一个和弦之后开始
+
+                for (let i = 0; i < chordsNeeded; i++) {
+                    // 选择一个和弦
+                    const chordType = progression[i % progression.length];
+
+                    // 计算和弦名称
+                    let chordName;
+                    if (chordType.includes('i')) {
+                        // 小调和弦
+                        const degree = progression.indexOf(chordType);
+                        const intervals = isMinor ? [0, 3, 7, 10, 2, 5, 11] : [0, 5, 7, 9, 2, 4, 11];
+                        const noteIndex = (actualBaseIndex + intervals[degree]) % 12;
+                        chordName = notes[noteIndex];
+
+                        if (chordType === chordType.toLowerCase() && !chordType.includes('7')) {
+                            chordName += 'm';
+                        } else if (chordType.includes('7')) {
+                            chordName += '7';
+                        }
+                    } else {
+                        // 大调和弦
+                        const degree = majorProgression.indexOf(chordType);
+                        const intervals = isMinor ? [0, 3, 7, 8, 0, 3, 10] : [0, 5, 7, 9, 2, 4, 11];
+                        const noteIndex = (actualBaseIndex + intervals[degree]) % 12;
+                        chordName = notes[noteIndex];
+
+                        if (chordType === chordType.toLowerCase() && !chordType.includes('7')) {
+                            chordName += 'm';
+                        } else if (chordType.includes('7')) {
+                            chordName += '7';
+                        }
+                    }
+
+                    // 添加和弦
+                    chords.push({
+                        name: chordName,
+                        time: timeOffset,
+                        duration: barDuration
+                    });
+
+                    timeOffset += barDuration;
+                }
+
+                return chords;
+            }
+
+            // 更新和弦高亮 - 改进版
+            function updateChordHighlight(currentTime) {
+                if (!chordItems || chordItems.length === 0) return;
+
+                // 移除所有高亮
+                chordItems.forEach(item => {
+                    item.classList.remove('active');
+                });
+
+                // 找到当前时间对应的和弦
+                let currentChord = null;
+                let minTimeDiff = Infinity;
+
+                chordItems.forEach(item => {
+                    const chordTime = parseFloat(item.dataset.time);
+                    const timeDiff = Math.abs(currentTime - chordTime);
+
+                    if (timeDiff < minTimeDiff) {
+                        minTimeDiff = timeDiff;
+                        currentChord = item;
+                    }
+                });
+
+                // 高亮当前和弦
+                if (currentChord) {
+                    currentChord.classList.add('active');
+
+                    // 只有当当前和弦不在可视区域时才滚动
+                    const container = chordDisplay;
+                    const itemRect = currentChord.getBoundingClientRect();
+                    const containerRect = container.getBoundingClientRect();
+
+                    // 检查和弦是否在可视区域外
+                    if (itemRect.left < containerRect.left ||
+                        itemRect.right > containerRect.right) {
+                        // 滚动到当前和弦，使其可见
+                        currentChord.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'nearest',
+                            inline: 'center'
+                        });
+                    }
+                }
+            }
+
+            // 格式化时间
+            function formatTime(seconds) {
+                const mins = Math.floor(seconds / 60);
+                const secs = Math.floor(seconds % 60);
+                return `${mins}:${secs.toString().padStart(2, '0')}`;
+            }
+
+            // 生成歌词 - 简化版
+            function generateRealLyrics() {
+                console.log("生成歌词");
+                // 清空现有歌词
+                lyricsContainer.innerHTML = '';
+
+                // 检查是否有歌词数据
+                if (typeof lyricsData !== 'undefined' && lyricsData && lyricsData.length > 0) {
+                    // 使用真实歌词数据
+                    console.log("使用真实歌词数据，行数:", lyricsData.length);
+
+                    lyricsData.forEach(line => {
+                        const lineElement = document.createElement('div');
+                        lineElement.className = 'lyrics-line';
+                        lineElement.dataset.time = line.time;
+                        lineElement.textContent = line.text;
+                        lyricsContainer.appendChild(lineElement);
+                    });
+                } else {
+                    // 使用简化的提示
+                    console.log("未检测到歌词数据");
+                    
+                    const infoElement = document.createElement('div');
+                    infoElement.className = 'lyrics-info text-center';
+                    infoElement.innerHTML = '<p class="mt-5 mb-5">未检测到歌词</p>';
+                    lyricsContainer.appendChild(infoElement);
+                }
+
+                console.log("歌词生成完成");
+            }
+
+            // 更新歌词高亮 - 优化
+            function updateLyrics(currentTime) {
+                const lyricsLines = document.querySelectorAll('.lyrics-line');
+                if (!lyricsLines || lyricsLines.length === 0) return;
+
+                // 移除所有高亮
+                lyricsLines.forEach(line => {
+                    line.classList.remove('active');
+                });
+
+                // 找到当前应该高亮的歌词行
+                let currentLine = null;
+                let nextLineTime = Infinity;
+
+                lyricsLines.forEach(line => {
+                    const lineTime = parseFloat(line.dataset.time);
+
+                    // 找到最接近但不超过当前时间的歌词
+                    if (lineTime <= currentTime && (currentLine === null || lineTime > parseFloat(currentLine.dataset.time))) {
+                        currentLine = line;
+                    }
+
+                    // 找到下一行歌词的时间
+                    if (lineTime > currentTime && lineTime < nextLineTime) {
+                        nextLineTime = lineTime;
+                    }
+                });
+
+                // 高亮当前歌词
+                if (currentLine) {
+                    currentLine.classList.add('active');
+
+                    // 平滑滚动到当前歌词
+                    currentLine.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'center'
+                    });
+                }
+            }
+        });
+    </script>
+</body>
+</html>

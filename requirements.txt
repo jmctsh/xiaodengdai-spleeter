@@ -1,0 +1,14 @@
+flask==2.0.1
+flask-dropzone==1.6.0
+flask-wtf==0.15.1
+librosa==0.8.1
+numpy==1.21.6
+numba==0.53.1
+llvmlite==0.36.0
+pychorus==0.1
+spleeter==2.3.0
+youtube-dl==2021.12.17
+soundfile==0.10.3.post1
+tensorflow==2.9.3
+pooch==1.5.2
+resampy==0.2.2
