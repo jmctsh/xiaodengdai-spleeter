@@ -254,7 +254,7 @@ def separate():
                 'bpm': round(tempo),
                 'key': key_with_mode,
                 'time_signature': '4/4'  # 默认为4/4拍
-            }cd d:\spleeter
+            }
 
             return jsonify({
                 'status': 'success',
